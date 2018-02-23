@@ -14,6 +14,11 @@ define([
 
   'use strict';
 
+  /**
+   * @callback ErrorOnlyCallback
+   * @param {?Error} error
+   */
+
   var xAPI = Backbone.Model.extend({
 
     /** Declare defaults and model properties */
@@ -150,7 +155,7 @@ define([
 
     /**
      * Intializes the ADL xapiWrapper code.
-     * @param {function} callback - Error-first callback function
+     * @param {ErrorOnlyCallback} callback
      */
     initializeWrapper: function(callback) {
 
@@ -286,7 +291,7 @@ define([
     },
 
     getSessionDuration: function() {
-      return Math.abs ((new Date()) - this.startTimeStamp);
+      return Math.abs((new Date()) - this.startTimeStamp);
     },
 
     /**
@@ -594,8 +599,8 @@ define([
       if (model.get('_type') === 'component' && model.get('_isQuestionType') === true
         && this.coreEvents['Adapt']['questionView:recordInteraction'] === true
         && this.coreEvents['components']['change:_isComplete'] === true) {
-          // Return because 'Answered' will already have been passed.
-          return;
+        // Return because 'Answered' will already have been passed.
+        return;
       }
 
       var object = new ADL.XAPIStatement.Activity(this.getUniqueIri(model));
@@ -678,7 +683,7 @@ define([
      * @return {object} An ADL verb object with 'id' and language specific 'display' properties.
      */
     getVerb: function(verb) {
-       if (typeof verb === 'string') {
+      if (typeof verb === 'string') {
         var key = verb.toLowerCase();
         verb = ADL.verbs[key];
 
@@ -842,9 +847,8 @@ define([
     /**
      * Sends the state to the or the given model to the configured LRS.
      * @param {AdaptModel} model - The AdaptModel whose state has changed.
-     * @param {function|null} clalback - Optional callback function.
      */
-    sendState: function(model, modelState, callback) {
+    sendState: function(model, modelState) {
       if (this.get('shouldTrackState') !== true) {
         return;
       }
@@ -883,7 +887,7 @@ define([
 
     /**
      * Retrieves the state information for the current course.
-     * @param {function|null} callback - Optional callback function.
+     * @param {ErrorOnlyCallback} [callback]
      */
     getState: function(callback) {
       var self = this;
@@ -891,37 +895,34 @@ define([
       var actor = this.get('actor');
       var state = {};
 
-      Async.each(_.keys(this.coreObjects), function(type, cb) {
-
-        self.xapiWrapper.getState(activityId, actor, type, null, null, function(xmlHttpRequest) {
+      Async.each(_.keys(this.coreObjects), function(type, nextType) {
+        self.xapiWrapper.getState(activityId, actor, type, null, null, function(error, xhr) {
           _.defer(function() {
-            if (!xmlHttpRequest) {
+            if (error) {
               Adapt.log.warn('getState() failed for ' + activityId + ' (' + type + ')');
-              return cb();
+              return nextType(error);
             }
 
-            switch (xmlHttpRequest.status) {
-              case 200: {
-                state[type] = JSON.parse(xmlHttpRequest.response);
-                break;
-              }
-              case 404: {
-                // State not found.
-                Adapt.log.warn('Unable to getState() for ' + activityId + ' (' + type + ')');
-                break;
-              }
+            if (!xhr) {
+              Adapt.log.warn('getState() failed for ' + activityId + ' (' + type + ')');
+              return nextType(new Error('\'xhr\' parameter is missing from callback'));
             }
 
-            cb();
+            if (xhr.status !== 200) {
+              Adapt.log.warn('getState() failed for ' + activityId + ' (' + type + ')');
+              return nextType(new Error('Invalid status code ' + xhr.status + ' returned from getState() call'));
+            }
+
+            state[type] = JSON.parse(xhr.response);
+            return nextType();
           });
         });
-
-      }, function(e) {
-        if (e) {
-          Adapt.log.error(e);
+      }, function(error) {
+        if (error) {
+          Adapt.log.error(error);
 
           if (callback) {
-            return callback(e);
+            return callback(error);
           }
         }
 
@@ -939,7 +940,7 @@ define([
 
     /**
      * Deletes all state information for the current course.
-     * @param {function|null} callback - Optional callback function.
+     * @param {ErrorOnlyCallback} [callback]
      */
     deleteState: function(callback) {
       var self = this;
@@ -1038,10 +1039,10 @@ define([
     getLRSExtendedAttribute: function(key) {
       var extended = this.getLRSAttribute('extended');
       if (extended == null) {
-      	return null;
+        return null;
       }
 
-	    try {
+      try {
         if (key === 'definition') {
           return JSON.parse(extended.definition);
         }
@@ -1084,7 +1085,7 @@ define([
     /**
      * Sends a single xAPI statement to the LRS.
      * @param {ADL.XAPIStatement} statement - A valid ADL.XAPIStatement object.
-     * @param {function} callback - Optional callback function.
+     * @param {ADLCallback} [callback]
      */
     sendStatement: function(statement, callback) {
       if (!statement) {
@@ -1099,7 +1100,7 @@ define([
     /**
      * Sends multiple xAPI statements to the LRS.
      * @param {ADL.XAPIStatement[]} statements - An array of valid ADL.XAPIStatement objects.
-     * @param {function} callback - Optional error-first callback function.
+     * @param {ErrorOnlyCallback} [callback]
      */
     sendStatements: function(statements, callback) {
       if (!statements || statements.length === 0) {
