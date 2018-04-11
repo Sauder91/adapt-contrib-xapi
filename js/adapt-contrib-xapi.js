@@ -161,21 +161,34 @@ define([
     initializeWrapper: function(callback) {
       // If no endpoint has been configured, assume the ADL Launch method.
       if (!this.getConfig('_endpoint')) {
-        // If no endpoint is configured, assume this is using the ADL launch method.
-        ADL.launch(_.bind(function(error, launchData, xapiWrapper) {
-          if (error) {
-            return callback(error);
-          }
-
-          // Initialise the xAPI wrapper.
-          this.xapiWrapper = xapiWrapper;
-
+        //check to see if configuration has been passed in URL
+        this.xapiWrapper = window.xapiWrapper || ADL.XAPIWrapper;
+        if(this.checkWrapperConfig()) {
+          //URL had all necessary configuration so we continue using it
+          // Set the LRS specific properties.
           this.set({
-            actor: launchData.actor
+            registration: this.getLRSAttribute('registration'),
+            actor: this.getLRSAttribute('actor')
           });
 
           callback();
-        }, this), true, true);
+        } else {
+          // If no endpoint is configured, assume this is using the ADL launch method.
+          ADL.launch(_.bind(function(error, launchData, xapiWrapper) {
+            if (error) {
+              return callback(error);
+            }
+
+            // Initialise the xAPI wrapper.
+            this.xapiWrapper = xapiWrapper;
+
+            this.set({
+              actor: launchData.actor
+            });
+
+            callback();
+          }, this), true, true);
+        }
       } else {
         // The endpoint has been defined in the config, so use the static values.
         // Initialise the xAPI wrapper.
@@ -240,6 +253,17 @@ define([
       this.sendStatements(statements);
     },
 
+    /**
+    * Check Wrapper to see if all parameters needed are set
+    */
+    checkWrapperConfig: function() {
+      if(this.xapiWrapper.lrs.endpoint && this.xapiWrapper.lrs.actor
+        && this.xapiWrapper.lrs.auth && this.xapiWrapper.lrs.activity_id ) {
+          return true;
+        } else {
+          return false;
+        }
+    },
     /**
      * Attempt to extract endpoint, user and password from the config.json.
      */
@@ -335,6 +359,9 @@ define([
       return rtnStr;
     },
 
+    /**
+     *
+     */
     setupListeners: function() {
       if (!this.get('isInitialised')) {
         Adapt.log.warn('adapt-contrib-xapi: Unable to setup listeners for xAPI');
@@ -448,7 +475,7 @@ define([
     },
 
     /**
-     * Gets the activity type for a given model.  
+     * Gets the activity type for a given model.
      * @param {Backbone.Model} model - An instance of Adapt.Model (or Backbone.Model).
      * @return {string} A URL to the current activity type.
      */
@@ -477,7 +504,7 @@ define([
 
     /**
      * Sends an 'answered' statement to the LRS.
-     * @param {ComponentView} view - An instance of Adapt.ComponentView. 
+     * @param {ComponentView} view - An instance of Adapt.ComponentView.
      */
     onQuestionInteraction: function(view) {
       if (!view.model || view.model.get('_type') !== 'component' && !view.model.get('_isQuestionType')) {
@@ -735,7 +762,7 @@ define([
 
     /**
      * Handler for the Adapt Framework's 'tracking:complete' event.
-     * @param {object} completionData
+     * @param {object} completionData -
      */
     onTrackingComplete: function(completionData) {
       var self = this;
@@ -815,7 +842,7 @@ define([
     /**
      * Generate an XAPIstatement object for the xAPI wrapper sendStatement methods.
      * @param {object} verb - A valid ADL.verbs object.
-     * @param {object} object - 
+     * @param {object} object -
      * @param {object} [result] - optional
      * @param {object} [context] - optional
      * @return {ADL.XAPIStatement} A formatted xAPI statement object.
@@ -1196,7 +1223,7 @@ define([
     xAPI = new xAPI();
 
     Adapt.on('app:languageChanged', _.bind(function(newLanguage) {
-      // Update the language.      
+      // Update the language.
       xAPI.set({ displayLang: newLanguage });
 
       // Since a language change counts as a new attempt, reset the state.
